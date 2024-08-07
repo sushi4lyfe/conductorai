@@ -1,13 +1,15 @@
-Original went with a regex based solution, then decided to use LLM. \
+## Approach
+
+Original went with a regex based solution, then decided to use LLM \
 \
-Just started learning about LLM / huggingdace this week so my model is not super optimized.
-I did consider fine tuning and even wrote some code to do it but didn't have time to create a large enough custom dataset in the time allocated.
-I think the best solution is the `llmsolution.py` but included both with my submission.
+Just started learning about LLM / huggingface this week so the model isn't super optimized.
+I considered fine tuning and wrote some code for it but didn't have time to create a large enough custom dataset in the time allocated.
+I think the best solution is `llmsolution.py` but included both with my submission.
 The llmsolution is more elegant, but was initally worse than the regex solution until I added few shot prompting.
-One of the prompts performs the same as regex solution but it might be overfitted towards this specific document.
+One of the prompts performs the same as regex solution but it might be overfitted towards this specific document
 \
 \
-Overall, thought this project was a ton of fun. Hope to hear back from you guys soon!
+Overall thought this project was a ton of fun. Hope to hear back from you guys soon :)
 
 ## Run the Files
 
@@ -70,5 +72,5 @@ def fine_tune_model():
     trainer.train()
 ```
 If we did get it working on a larger dataset, we could probably get it working on for our use case with a high accuracy
-rate from just several hundred datapoints. However, since we have a highly specified usecase the model would be prone to
-catastrophic forgetting unless we used PEFT or trained alongside broader question types.
+rate from just several hundred datapoints. However since we have a highly specified usecase the model would be prone to
+catastrophic forgetting unless we used PEFT or trained alongside broader question types
