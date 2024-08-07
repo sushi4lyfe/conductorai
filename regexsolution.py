@@ -15,17 +15,17 @@ Future improvements (long term)
     - Evaluate precision / recall of models with training data (may need human labeling)
 """
 
-
 import pdfplumber
-import sys
 import re
+from transformers import pipeline
 
-potential_negative_sign = "-?[$€£¥₣₹]?"
-potential_number_regex = "(?:\d+)((\d{1,3})*([\,\ ]\d{3})*)(\.\d+)?"
-potential_label_regex = "[ ]?(k[^a-zA-Z]|m[^a-zA-Z]|b[^a-zA-Z]|t[^a-zA-Z]|thousand|million|billion|trillion|thousands|millions|billions|trillions)?"
+negative_sign_regex = "-?[$€£¥₣₹]?"
+number_regex = "(?:\\d+)((\\d{1,3})*([\\,\\ ]\\d{3})*)(\\.\\d+)?"
+label_regex = "((k|m|b)(\\s|$|\\.| ))|((thousand)|(million)|(billion)|(trillion)|(thousands)|(millions)|(billions)|(trillions)"
+full_label_regex = f"([ ]?({label_regex}))?)"
 
-date_regex = "\d{1,2}\/\d{1,2}\/\d{2,4}"
-phone_number_regex = "[1-9]\d{2}-\d{3}-\d{4}|\(\d{3}\)\s?\d{3}-\d{4}|[1-9]\d{2}\.\d{3}\.\d{4}"
+date_regex = "\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}"
+phone_number_regex = "[1-9]\\d{2}-\\d{3}-\\d{4}|\\(\\d{3}\\)\\s?\\d{3}-\\d{4}|[1-9]\\d{2}\\.\\d{3}\\.\\d{4}"
 
 language_to_number = {
     "k": 1000,
@@ -46,37 +46,60 @@ language_to_number = {
 # See https://regexr.com/84dlj for details on the regex + test cases
 # Note: this won't remove all dates or phone numbers, only the most obvious ones. We don't want too many false negatives
 def remove_false_positives(text):
-    print(f'Removing false positives from text {text}') # TODO(JSHU): Remove this print statement
     regex_header = re.compile(f'{date_regex}|{phone_number_regex}')
     text = re.sub(regex_header, '', text)
-    print(f'After removing false positives from text {text}') # TODO(JSHU): Remove this print statement
     return text
 
 # Extract numbers and potential labels from text
 # See https://regexr.com/84dku for details on the regex + test cases
 def extract_potential_numbers(text):
     text = text.lower()
-    full_regex = f'{potential_negative_sign}{potential_number_regex}{potential_label_regex}'
-    print(f'Extracting numbers with regex: {full_regex} from text {text}') # TODO(JSHU): Remove this print statement
+    full_regex = f'{negative_sign_regex}{number_regex}{full_label_regex}'
     regex_header = re.compile(full_regex)
-    potential_numbers = re.findall(regex_header, text)
-    print(f'Found potential numbers: {potential_numbers}') # TODO(JSHU): Remove this print statement
-    return potential_numbers
+    potential_numbers = re.finditer(regex_header, text)
+    final_ans = []
+    for pn in potential_numbers:
+        number_rep = pn.group(0)
+        split_by_decimal = number_rep.split(".")
+        # Filter out number if it is split by decimal and there are more than 2 parts, ie 12.3123.14
+        if len(split_by_decimal) > 2:
+            continue
+        is_valid_number = True
+        # Filter out numbers split by strange spacing. ie: 3131 31 31 is not a valid number
+        split_by_spaces = split_by_decimal[0].split(" ")
+        for ind, split in enumerate(split_by_spaces):
+            num_digits = len([ch for ch in split if ch.isdigit()])
+            if ind != 0 and num_digits != 3:
+                is_valid_number = False
+            if ind == 0 and num_digits > 3:
+                is_valid_number = False
+        # Filter out numbers split by strange commas. ie:1 363,021 388,333 423,378 is not a valid number
+        split_by_commas = split_by_decimal[0].split(",")
+        for ind, split in enumerate(split_by_commas):
+            num_digits = len([ch for ch in split if ch.isdigit()])
+            if ind != 0 and num_digits != 3:
+                is_valid_number = False
+            if ind == 0 and num_digits > 3:
+               is_valid_number = False
+        if is_valid_number:
+            final_ans.append(number_rep)
+    return final_ans
 
 def clean_number(text):
-    num = float(str([char for char in text if char.isdigit() or char == "."]))
-    factor = re.find(potential_label_regex, text)
-    if factor:
-        factor = language_to_number[factor]
-        num = num * factor
-    return 0, text
+    cleaned_text = ''.join(map(str, [char for char in text if char.isdigit() or char == "."])).rstrip(".")
+    num = float(cleaned_text)
+    regex_header = re.compile(f'((k|m|b|t)(\\s|$|\\.| ))|((thousand)|(million)|(billion)|(trillion)|(thousands)|(millions)|(billions)|(trillions))')
+    factor = re.search(regex_header, text)
+    if factor and factor.group():
+        multiplier = language_to_number[factor.group().strip().strip('.')]
+        num = num * multiplier
+    return num
 
 def get_highest_number(text):
     text = remove_false_positives(text)
     potential_numbers = extract_potential_numbers(text)
-    highest_number, highest_number_text = -1 * sys.maxsize, ""
+    highest_number, highest_number_text = 0, ""
     for pn in potential_numbers:
-        print(f'Cleaning potential number: {pn}') # TODO(JSHU): Remove this print statement
         number = clean_number(pn)
         if number > highest_number:
             highest_number = number
@@ -84,7 +107,7 @@ def get_highest_number(text):
     return highest_number, highest_number_text
 
 def get_largest_number_in_pdf(filename):
-    largest_number, largest_match, page = sys.maxsize * -1, "", 0
+    largest_number, largest_match, page = 0, "", -1
     with pdfplumber.open(filename) as pdf:
         for current_page in range(0, len(pdf.pages)):
             page_content = pdf.pages[current_page]
@@ -94,29 +117,20 @@ def get_largest_number_in_pdf(filename):
                 for row in table:
                     for item in row:
                         if item is not None and len(item) > 0:
-                            print("Checking table item", item) # TODO(JSHU): Remove this print statement
                             largest_table_number, matched_text = get_highest_number(item)
                             if largest_table_number > largest_number:
-                                largest_number = largest_table_number
-                                largest_match = matched_text
+                                largest_number, largest_match, page = largest_table_number, matched_text, current_page
             # Check text for large numbers
             text = page_content.extract_text()
             largest_text_number, matched_text = get_highest_number(text)
             if largest_text_number > largest_number:
-                print(f'Found new largest number {largest_text_number} from {matched_text} on page {current_page}')
-                largest_number = largest_text_number
-                largest_match = matched_text
-                page = current_page
-            # TODO(JSHU): Make sure data in tables is not repeated in text
-    if largest_number == -1 * sys.maxsize:
-        raise ValueError("No valid numbers found in the PDF")
-    return largest_number, largest_match, page
+                largest_number, largest_match, page = largest_text_number, matched_text, current_page
+    return largest_number, largest_match, page+1
 
 def main():
-    try:
-        ans, largest_match, page = get_largest_number_in_pdf("AirForce.pdf")
-    except ValueError as e:
-        print(f'Could not find largest number: {e}')
+    ans, largest_match, page = get_largest_number_in_pdf("AirForce.pdf")
+    if page < 0:
+        print(f'No numbers found in the PDF file')
         return
     print(f'The largest number in the PDF file is {ans} which was found from the regex match {largest_match} on page {page}')
 

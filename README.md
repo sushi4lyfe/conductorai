@@ -1,20 +1,74 @@
-# Take Home Project
+Original went with a regex based solution, then decided to use LLM. \
+\
+Just started learning about LLM / huggingdace this week so my model is not super optimized.
+I did consider fine tuning and even wrote some code to do it but didn't have time to create a large enough custom dataset in the time allocated.
+I think the best solution is the `llmsolution.py` but included both with my submission.
+The llmsolution is more elegant, but was initally worse than the regex solution until I added few shot prompting.
+One of the prompts performs the same as regex solution but it might be overfitted towards this specific document.
+\
+\
+Overall, thought this project was a ton of fun. Hope to hear back from you guys soon!
 
-This is ConductorAI's take home project for engineering candidates. Due to the constraints of our active contracts, we are only considering US citizens for engineering roles at this time.
+## Run the Files
 
-## The problem
+`pip install -r requirements.txt` \
+`python llmsolution.py` \
+`python regexsolution.py`
 
-[Here is a large pdf document](https://www.saffm.hq.af.mil/Portals/84/documents/FY25/FY25%20Air%20Force%20Working%20Capital%20Fund.pdf?ver=sHG_i4Lg0IGZBCHxgPY01g%3d%3d). We want to find the largest number in this document. The unit is not important (could be dollars, years, pounds, etc), we're just looking for the greatest numerical value in the document.
 
-For a bonus challenge if you have time, take natural language guidance from the document into consideration. For example, where the document states that values are listed in millions, a value of 3.15 would be considered to be 3,150,000 instead of 3.15.
+## Fine Tuning
 
-## What you need to do
+Here is some fine tuning code I wrote which I ultimately didn't use, but I've included that as well:
 
-1. Read the instructions above describing the desired behavior. Your solution should output the greatest numerical value it can find in the document. Feel free to download the document manually and reference it locally instead of fetching it over the internet in your code.
-2. Implement a solution in software. You can use any language you want. If you don't have a preference, use python. You can use any open source dependencies you want, but your software must be self-contained, meaning it cannot call to any external APIs. When developing, you can use _anything_ (except another human) to help you, including Google, Copilot, ChatGPT, etc.
-3. Put your software solution somewhere where you can link it to us, a public git repo is probably easiest. Provide a README with a brief description of how to run your software.
-4. Email someone at ConductorAI (the person who gave you this project) with a link to your code.
+```python
+training_set = [
+    {
+        'answers': {
+            'answer_start': [70],
+            'text': ['1 million'],
+        },
+        'context': 'Hey I want 40 burgers or maybe 90. I also want 1000 fries. I also want 1 million',
+        'question': 'What is the biggest number in this text?',
+    },
+    {
+        'answers': {
+            'answer_start': [19],
+            'text': ['2025'],
+        },
+        'context': 'AFWCF Overview - FY 2025 President’s Budget (PB)',
+        'question': 'What is the biggest number in this text?',
+    },
+    {
+        'answers': {
+            'answer_start': [50],
+            'text': ['239'],
+        },
+        'context': 'The methodology for calculating cash requirements 239 consists of four from Cash Management',
+        'question': 'What is the biggest number in this text?',
+    },
+]
 
-You're expected to take no more than 3 hours on this. Your solution will be judged on its functionality and readability, but we will not nitpick over style or other minor issues. Reasonable performance (i.e. not taking more than a minute) is expected, but performance is not otherwise a priority. You may be asked to go over this code in a subsequent interview, and should be able to generally communicate what it does and why you implemented it the way you did. We may even run it against other similar documents to see if it generalizes.
+def tokenize_function(training_data):
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+    return tokenizer(training_data["question"], training_data["context"], truncation=True)
 
-Have fun and best of luck!
+def fine_tune_model():
+    model = transformers.AutoModel.from_pretrained(model_name)
+    tokenized_train_datasets = map(tokenize_function, training_set)
+    training_args = transformers.TrainingArguments(
+        output_dir="./smaller_bert_finetuned",
+        per_device_train_batch_size=8,
+        num_train_epochs=5,
+        max_steps=5,
+    )
+    # Set up trainer, assigning previously set up training arguments
+    trainer = transformers.Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_train_datasets,
+    )
+    trainer.train()
+```
+If we did get it working on a larger dataset, we could probably get it working on for our use case with a high accuracy
+rate from just several hundred datapoints. However, since we have a highly specified usecase the model would be prone to
+catastrophic forgetting unless we used PEFT or trained alongside broader question types.
